@@ -372,25 +372,26 @@ summary {
 
 <div id="executive-summary" class="section level2">
 <h2>Executive Summary</h2>
-<p>This project is part of the Practical Machine Learning Class offered by Coursera and Johns Hopkins University. The goal is to predict the <em>classe</em> variable, which is the manner (qualitatively, “how well”) a participant performed the exercise. This is to be predicted using sensor data obtained from the chest, wrist, bicep, wrist, and dumbell or a participant during a dumbell bicep curl.</p>
+<p>This project is part of the Practical Machine Learning Class offered by Coursera and Johns Hopkins University. The goal is to predict the <em>classe</em> variable, which is the manner (qualitatively, “how well”) a participant performed the exercise. This is to be predicted using sensor data obtained from the chest, wrist, bicep, wrist, and dumbell of a participant during a dumbell bicep curl.</p>
 </div>
 <div id="background" class="section level2">
 <h2>Background</h2>
-<p>Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify <strong>how much</strong> of a particular activity they do, but they rarely quantify <strong>how well</strong> they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <a href="http://groupware.les.inf.puc-rio.br/har" class="uri">http://groupware.les.inf.puc-rio.br/har</a> (see the section on the Weight Lifting Exercise Dataset).</p>
+<p>Using devies such as activity trackers or smartphones it is now possible to collect a large amount of data about personal activity relatively inexpensively. Hpwever, one thing that people regularly do is quantify <strong>how much</strong> of a particular activity they do, but they rarely quantify <strong>how well</strong> they do it. In this project, the goal will be to use data from accelerometers and gyroscopes on the belt, forearm, arm, and dumbell of 6 participants. The participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways. * Class A - exactly according to the specification * Class B - throwing the elbows to the front * Class C - lifting the dumbbell only halfway * Class D - lowering the dumbbell only halfway * Class E - throwing the hips to the front</p>
+<p><strong>All the data is courtesy of:</strong> <a href="http://groupware.les.inf.puc-rio.br/har" class="uri">http://groupware.les.inf.puc-rio.br/har</a> For more information see the section on the Weight Lifting Exercise Dataset.</p>
 </div>
 <div id="data" class="section level2">
 <h2>Data</h2>
-<p>Please note that the data for this project come from this source: <a href="http://groupware.les.inf.puc-rio.br/har" class="uri">http://groupware.les.inf.puc-rio.br/har</a>.</p>
 <div id="data-extration" class="section level3">
 <h3>Data Extration</h3>
 <pre class="r"><code>train_url &lt;- &quot;https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv&quot; 
 test_url &lt;- &quot;https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv&quot;
 
-train &lt;- read_csv(train_url, na = c(&quot;&quot;,&quot;NA&quot;))
-test &lt;- read_csv(test_url, na = c(&quot;&quot;,&quot;NA&quot;))</code></pre>
+train &lt;- read_csv(train_url, na = c(&quot;&quot;,&quot;NA&quot;,&quot;#DIV/0!&quot;))
+test &lt;- read_csv(test_url, na = c(&quot;&quot;,&quot;NA&quot;,&quot;#DIV/0!&quot;))</code></pre>
 </div>
 <div id="enable-parallel-processing" class="section level3">
 <h3>Enable Parallel Processing</h3>
+<p>Parallel processing is useful in speeding up the models.</p>
 <pre class="r"><code>cluster &lt;- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
 registerDoParallel(cluster)
 
@@ -401,6 +402,7 @@ fitControl &lt;- trainControl(method = &quot;cv&quot;,
 </div>
 <div id="data-cleanup" class="section level3">
 <h3>Data Cleanup</h3>
+<p>Set the response variable to be a factor, and remove variables that are not predictors.</p>
 <pre class="r"><code># Set response var, $classe, to be factor
 train$classe &lt;- factor(train$classe)
 
@@ -410,68 +412,51 @@ tidy_data &lt;- subset(train, new_window == &quot;no&quot;)
 # Remove columns with no useful data; all NAs 
 tidy_data &lt;- Filter(function(x)!all(is.na(x)), tidy_data)
 
-# Remove first seven columsn of identification information
+# Remove first seven columns of identification information
 tidy_data &lt;- tidy_data[, -(1:7)]</code></pre>
 </div>
 <div id="data-splitting" class="section level3">
 <h3>Data Splitting</h3>
-<p>Split training set into a Training and Validation set.</p>
+<p>Split the original training set into Training and Validation sets.</p>
 <pre class="r"><code># split the data
 set.seed(2020)
 index &lt;- createDataPartition(tidy_data$classe, p=0.75, list = FALSE)
 training_set &lt;- tidy_data[index, ]
 validation_set &lt;- tidy_data[-index, ]</code></pre>
 </div>
-<div id="conmfirmation-of-split" class="section level3">
-<h3>Conmfirmation of split</h3>
-<p>May not need this, but confirming that the data split is consistent across classe. The train to tidy data aplit will not be consistent because the tidy data eliminated data.</p>
-<pre class="r"><code>train %&gt;% group_by(classe) %&gt;% summarize(n=n()) %&gt;% mutate(per = n/sum(n))</code></pre>
-<pre><code>## # A tibble: 5 x 3
-##   classe     n   per
-##   &lt;fct&gt;  &lt;int&gt; &lt;dbl&gt;
-## 1 A       5580 0.284
-## 2 B       3797 0.194
-## 3 C       3422 0.174
-## 4 D       3216 0.164
-## 5 E       3607 0.184</code></pre>
-<pre class="r"><code>tidy_data %&gt;% group_by(classe) %&gt;% summarize(n=n()) %&gt;% mutate(per = n/sum(n))</code></pre>
-<pre><code>## # A tibble: 5 x 3
-##   classe     n   per
-##   &lt;fct&gt;  &lt;int&gt; &lt;dbl&gt;
-## 1 A       5471 0.285
-## 2 B       3718 0.193
-## 3 C       3352 0.174
-## 4 D       3147 0.164
-## 5 E       3528 0.184</code></pre>
-<pre class="r"><code>training_set %&gt;% group_by(classe) %&gt;% summarize(n=n()) %&gt;% mutate(per = n/sum(n))</code></pre>
-<pre><code>## # A tibble: 5 x 3
-##   classe     n   per
-##   &lt;fct&gt;  &lt;int&gt; &lt;dbl&gt;
-## 1 A       4104 0.285
-## 2 B       2789 0.193
-## 3 C       2514 0.174
-## 4 D       2361 0.164
-## 5 E       2646 0.184</code></pre>
-<pre class="r"><code>validation_set %&gt;% group_by(classe) %&gt;% summarize(n=n()) %&gt;% mutate(per = n/sum(n))</code></pre>
-<pre><code>## # A tibble: 5 x 3
-##   classe     n   per
-##   &lt;fct&gt;  &lt;int&gt; &lt;dbl&gt;
-## 1 A       1367 0.285
-## 2 B        929 0.193
-## 3 C        838 0.175
-## 4 D        786 0.164
-## 5 E        882 0.184</code></pre>
+<div id="confirmation-of-split" class="section level3">
+<h3>Confirmation of split</h3>
+<p>Confirming that the data split of response cariables is consistent across classe for each data set.</p>
+<pre class="r"><code>a &lt;- train %&gt;% group_by(classe) %&gt;% summarize(n=n()) %&gt;% mutate(per = n/sum(n))
+b &lt;- tidy_data %&gt;% group_by(classe) %&gt;% summarize(n=n()) %&gt;% mutate(per = n/sum(n))
+c &lt;- training_set %&gt;% group_by(classe) %&gt;% summarize(n=n()) %&gt;% mutate(per = n/sum(n))
+d &lt;- validation_set %&gt;% group_by(classe) %&gt;% summarize(n=n()) %&gt;% mutate(per = n/sum(n))
+summary&lt;-cbind(a,b$n, b$per ,c$n, c$per,d$n, d$per)
+names(summary) &lt;- c(&quot;classe&quot;,&quot;original#&quot;,&quot;original%&quot;,&quot;tidy#&quot;,&quot;tidy%&quot;,&quot;training#&quot;,&quot;training%&quot;,&quot;validation#&quot;,&quot;validation%&quot;)
+summary</code></pre>
+<pre><code>##   classe original# original% tidy#     tidy% training# training% validation#
+## 1      A      5580 0.2843747  5471 0.2847107      4104 0.2847232        1367
+## 2      B      3797 0.1935073  3718 0.1934846      2789 0.1934924         929
+## 3      C      3422 0.1743961  3352 0.1744380      2514 0.1744138         838
+## 4      D      3216 0.1638977  3147 0.1637698      2361 0.1637991         786
+## 5      E      3607 0.1838243  3528 0.1835970      2646 0.1835715         882
+##   validation%
+## 1   0.2846731
+## 2   0.1934611
+## 3   0.1745106
+## 4   0.1636818
+## 5   0.1836735</code></pre>
 </div>
 </div>
 <div id="analysis-and-model-generation" class="section level2">
 <h2>Analysis and Model Generation</h2>
-<p>For this assignment I followed the models as they are presented by: Datacamp <a href="https://campus.datacamp.com/courses/machine-learning-with-tree-based-models-in-r/classification-trees?ex=1" class="uri">https://campus.datacamp.com/courses/machine-learning-with-tree-based-models-in-r/classification-trees?ex=1</a> and Min Ma <a href="https://rstudio-pubs-static.s3.amazonaws.com/27179_e64f0de316fc4f169d6ca300f18ee2aa.html" class="uri">https://rstudio-pubs-static.s3.amazonaws.com/27179_e64f0de316fc4f169d6ca300f18ee2aa.html</a> ### Classification Tree Model</p>
+<p>For this assignment I followed the models as they are presented by: Datacamp <a href="https://campus.datacamp.com/courses/machine-learning-with-tree-based-models-in-r" class="uri">https://campus.datacamp.com/courses/machine-learning-with-tree-based-models-in-r</a> So the paradigm may differ from those presented in this course. But the outcomes should be similar.</p>
+<div id="classification-tree-model" class="section level3">
+<h3>Classification Tree Model</h3>
 <pre class="r"><code># Classification tree model
-#tree &lt;- train(classe~., data = training_set, method = &quot;rpart&quot;)
 tree &lt;- rpart(classe~., data = training_set, method = &quot;class&quot;)
 
 # Prediction
-#pred_tree &lt;- predict(tree, newdata = validation_set)
 pred_tree &lt;- predict(tree, newdata = validation_set, type = &quot;class&quot;)
 
 # Confusion Matrix
@@ -479,15 +464,11 @@ conf_tree &lt;- confusionMatrix(data = pred_tree, reference = validation_set$cla
 conf_tree$overall[1]</code></pre>
 <pre><code>##  Accuracy 
 ## 0.7469804</code></pre>
-<p>This has an accuracy of 0.7469804</p>
+<p>This has an accuracy of 74.7%</p>
+</div>
 <div id="bagged-model" class="section level3">
 <h3>Bagged Model</h3>
-<pre class="r"><code># Bagged tree model
-# tree2 &lt;- bag(classe~., data = training_set, B = 10,
-#             bagControl = bagControl(fit = ctreeBag$fit,
-#                                     predict = ctreeBag$pred,
-#                                     aggregate  = ctreeBag$aggregate))
-tree2 &lt;- rpart(classe~., data = training_set, method = &quot;class&quot;, control = rpart.control(cp = 0.0001))
+<pre class="r"><code>tree2 &lt;- rpart(classe~., data = training_set, method = &quot;class&quot;, control = rpart.control(cp = 0.0001))
 # printcp(tree2)
 
 # Prune the tree
@@ -496,14 +477,13 @@ tree.pruned &lt;- prune(tree2, cp = bestcp)
 
 # Prediction
 pred_bagged &lt;- predict(tree.pruned, newdata = validation_set, type = &quot;class&quot;)
-#pred_bagged &lt;- predict(tree2, newdata = validation_set)
 
 # Confusion Matrix
 conf_bagged &lt;- confusionMatrix(data = pred_bagged, reference = validation_set$classe)
 conf_bagged$overall[1]</code></pre>
 <pre><code>##  Accuracy 
 ## 0.9285714</code></pre>
-<p>This has an accuracy of 0.9285714</p>
+<p>This has an accuracy of 92.86%</p>
 </div>
 <div id="random-forest" class="section level3">
 <h3>Random Forest</h3>
@@ -514,7 +494,7 @@ conf_rf &lt;- confusionMatrix(pred_rf, validation_set$classe)
 conf_rf$overall[1]</code></pre>
 <pre><code>##  Accuracy 
 ## 0.9956268</code></pre>
-<p>This has an accuracy of 0.9956268</p>
+<p>This has an accuracy of 99.56%</p>
 </div>
 <div id="generalized-boosted-model-gbm" class="section level3">
 <h3>Generalized Boosted Model (GBM)</h3>
@@ -524,7 +504,18 @@ conf_gbm &lt;- confusionMatrix(pred_gbm, validation_set$classe)
 conf_gbm$overall[1]</code></pre>
 <pre><code>##  Accuracy 
 ## 0.9625156</code></pre>
-<p>This has an accuracy of 0.9625156</p>
+<p>This has an accuracy of 96.25%</p>
+</div>
+</div>
+<div id="prediction-of-test-data" class="section level2">
+<h2>Prediction of Test Data</h2>
+<p>Based upon the model accuracies, choose the Random Forest model because it yielded the highest score.</p>
+<pre class="r"><code>predict(rf, newdata = test)</code></pre>
+<pre><code>##  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 
+##  B  A  B  A  A  E  D  B  A  A  B  C  B  A  E  E  A  B  B  B 
+## Levels: A B C D E</code></pre>
+<div id="clean-up" class="section level3">
+<h3>Clean-up</h3>
 <pre class="r"><code>stopCluster(cluster)
 registerDoSEQ()</code></pre>
 </div>

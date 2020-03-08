@@ -3,8 +3,8 @@ title: "Practical Machine Learning Course Project"
 author: "Kevin Bitinsky"
 date: "03/03/2020"
 output:
-  html_document: default
   pdf_document: default
+  html_document: default
 fontsize: 10pt
 ---
 
