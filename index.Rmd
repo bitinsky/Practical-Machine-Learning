@@ -2,29 +2,167 @@
 title: "Practical Machine Learning Course Project"
 author: "Kevin Bitinsky"
 date: "03/03/2020"
-output: html_document
+output:
+  html_document: default
+  pdf_document: default
+fontsize: 10pt
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, message = FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(dplyr)
+library(readr)
+library(rpart)
+library(gbm)
+library(ipred)
+library(randomForest)
+library(parallel)
+library(doParallel)
 ```
 
-## R Markdown
+## Executive Summary
+This project is part of the Practical Machine Learning Class offered by Coursera and Johns Hopkins University. The goal is to predict the _classe_ variable, which is the manner (qualitatively, "how well") a participant performed the exercise. This is to be predicted using sensor data obtained from the chest, wrist, bicep, wrist, and dumbell of a participant during a dumbell bicep curl.  
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+## Background
+Using devies such as activity trackers or smartphones it is now possible to collect a large amount of data about personal activity relatively inexpensively. Hpwever, one thing that people regularly do is quantify **how much** of a particular activity they do, but they rarely quantify **how well** they do it. In this project, the goal will be to use data from accelerometers and gyroscopes on the belt, forearm, arm, and dumbell of 6 participants. The participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+* Class A - exactly according to the specification
+* Class B - throwing the elbows to the front
+* Class C - lifting the dumbbell only halfway
+* Class D - lowering the dumbbell only halfway
+* Class E - throwing the hips to the front
 
-```{r cars}
-summary(cars)
+**All the data is courtesy of:** http://groupware.les.inf.puc-rio.br/har 
+For more information see the section on the Weight Lifting Exercise Dataset.
+
+## Data
+
+### Data Extration
+``` {r data, message = FALSE, warning = FALSE}
+train_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv" 
+test_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+train <- read_csv(train_url, na = c("","NA","#DIV/0!"))
+test <- read_csv(test_url, na = c("","NA","#DIV/0!"))
 ```
 
-## Including Plots
+### Enable Parallel Processing
+Parallel processing is useful in speeding up the models. 
+```{r paralle_processing}
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+# Configure trainControl
+fitControl <- trainControl(method = "cv",
+                           number = 5,
+                           allowParallel = TRUE)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+### Data Cleanup
+Set the response variable to be a factor, and remove variables that are not predictors.
+```{r cleaning}
+# Set response var, $classe, to be factor
+train$classe <- factor(train$classe)
+
+# Remove summarization rows; new_window == "yes"
+tidy_data <- subset(train, new_window == "no")
+
+# Remove columns with no useful data; all NAs 
+tidy_data <- Filter(function(x)!all(is.na(x)), tidy_data)
+
+# Remove first seven columns of identification information
+tidy_data <- tidy_data[, -(1:7)]
+```
+
+### Data Splitting
+Split the original training set into Training and Validation sets.
+```{r splitting}
+# split the data
+set.seed(2020)
+index <- createDataPartition(tidy_data$classe, p=0.75, list = FALSE)
+training_set <- tidy_data[index, ]
+validation_set <- tidy_data[-index, ]
+```
+
+### Confirmation of split
+Confirming that the data split of response cariables is consistent across classe for each data set.
+```{r conf}
+a <- train %>% group_by(classe) %>% summarize(n=n()) %>% mutate(per = n/sum(n))
+b <- tidy_data %>% group_by(classe) %>% summarize(n=n()) %>% mutate(per = n/sum(n))
+c <- training_set %>% group_by(classe) %>% summarize(n=n()) %>% mutate(per = n/sum(n))
+d <- validation_set %>% group_by(classe) %>% summarize(n=n()) %>% mutate(per = n/sum(n))
+summary<-cbind(a,b$n, b$per ,c$n, c$per,d$n, d$per)
+names(summary) <- c("classe","original#","original%","tidy#","tidy%","training#","training%","validation#","validation%")
+summary
+```
+
+ 
+## Analysis and Model Generation
+For this assignment I followed the models as they are presented by:
+Datacamp https://campus.datacamp.com/courses/machine-learning-with-tree-based-models-in-r
+So the paradigm may differ from those presented in this course. But the outcomes should be similar.
+
+### Classification Tree Model
+``` {r cart_model}
+# Classification tree model
+tree <- rpart(classe~., data = training_set, method = "class")
+
+# Prediction
+pred_tree <- predict(tree, newdata = validation_set, type = "class")
+
+# Confusion Matrix
+conf_tree <- confusionMatrix(data = pred_tree, reference = validation_set$classe)
+conf_tree$overall[1]
+```
+This has an accuracy of `r round(conf_tree$overall[1],4)*100`% 
+
+### Bagged Model
+``` {r bagged_model}
+tree2 <- rpart(classe~., data = training_set, method = "class", control = rpart.control(cp = 0.0001))
+# printcp(tree2)
+
+# Prune the tree
+bestcp <- tree2$cptable[which.min(tree2$cptable[,"xerror"]),"CP"]
+tree.pruned <- prune(tree2, cp = bestcp)
+
+# Prediction
+pred_bagged <- predict(tree.pruned, newdata = validation_set, type = "class")
+
+# Confusion Matrix
+conf_bagged <- confusionMatrix(data = pred_bagged, reference = validation_set$classe)
+conf_bagged$overall[1]
+```
+This has an accuracy of `r round(conf_bagged$overall[1],4)*100`%
+
+### Random Forest
+There is much discussion on the poor performance of 'Party', the library used in train for method = 'rf'. Instead, the suggestion is to use randomForest. 
+```{r random_forest}
+rf <- randomForest(formula = classe ~ ., data = training_set, trControl = fitControl)
+pred_rf <- predict(rf, newdata = validation_set)
+conf_rf <- confusionMatrix(pred_rf, validation_set$classe)
+conf_rf$overall[1]
+```
+This has an accuracy of `r round(conf_rf$overall[1],4)*100`%
+
+
+### Generalized Boosted Model (GBM)
+```{r GBM_model}
+gbm <- train(classe ~ ., method="gbm",data=training_set, verbose=FALSE,trControl = fitControl)
+pred_gbm <- predict(gbm, newdata = validation_set, n.trees = num_trees,type = "raw")
+conf_gbm <- confusionMatrix(pred_gbm, validation_set$classe)
+conf_gbm$overall[1]
+```
+This has an accuracy of `r round(conf_gbm$overall[1],4)*100`%
+
+## Prediction of Test Data
+Based upon the model accuracies, choose the Random Forest model because it yielded the highest score.
+```{r prediction}
+predict(rf, newdata = test)
+```
+
+### Clean-up
+```{r deregister_cluster}
+stopCluster(cluster)
+registerDoSEQ()
+```
